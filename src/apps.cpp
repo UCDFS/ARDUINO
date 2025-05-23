@@ -21,7 +21,7 @@
 
 // Define pedal calibration constants here (as they are specific to this file)
 // TODO: These values MUST be calibrated on the actual vehicle.
-const double PEDAL_VOLTAGE_MIN = 1.4; // Voltage at 0% pedal travel - CALIBRATE!
+const double PEDAL_VOLTAGE_MIN = 0; // Voltage at 0% pedal travel - CALIBRATE!
 const double PEDAL_VOLTAGE_MAX =
     3.2; // Voltage at 100% pedal travel - CALIBRATE!
 // TODO: Verify ADC settings for Arduino Due (default 10-bit, 3.3V ref)
@@ -73,11 +73,11 @@ double get_apps_reading() {
   // Compare the calculated percentages.
   if (std::fabs(apps_1_percent - apps_2_percent) >
       APPS_PLAUSIBILITY_THRESHOLD) {
-    if (DEBUG_MODE) {
+    if (DEBUG_MODE) { // This event-driven print is fine
       Serial.print("APPS Implausibility Detected! APPS1: ");
-      Serial.print(apps_1_percent);
+      Serial.print(apps_1_percent, 1); // Print with 1 decimal place
       Serial.print("%, APPS2: ");
-      Serial.print(apps_2_percent);
+      Serial.print(apps_2_percent, 1); // Print with 1 decimal place
       Serial.println("%");
     }
     // FSUK EV.5.6.3: Torque must be cut to zero within 100ms.
@@ -89,22 +89,8 @@ double get_apps_reading() {
   // 4. Return the average percentage if plausible
   double average_percent = (apps_1_percent + apps_2_percent) / 2.0;
 
-  if (DEBUG_MODE >= 2) { // Add higher debug level if needed
-    Serial.print("APPS Readings - Raw: ");
-    Serial.print(apps_1_raw);
-    Serial.print(", ");
-    Serial.print(apps_2_raw);
-    Serial.print(" | Volts: ");
-    Serial.print(apps_1_voltage, 3);
-    Serial.print(", ");
-    Serial.print(apps_2_voltage, 3);
-    Serial.print(" | Percent: ");
-    Serial.print(apps_1_percent, 1);
-    Serial.print(", ");
-    Serial.print(apps_2_percent, 1);
-    Serial.print(" | Avg: ");
-    Serial.println(average_percent, 1);
-  }
+  // Removed the timed DEBUG_MODE >= 3 print block from here.
+  // main.cpp will handle periodic APPS status printing.
 
   return average_percent;
 }

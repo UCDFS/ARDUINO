@@ -1,0 +1,15 @@
+{
+  "name": "bamocar-due",
+  "version": "1.0.0",
+  "description": "Library for Bamocar D3 controller interaction on Arduino Due.",
+  "dependencies": {
+    "SPI": "*",
+    "collin80/due_can": "*",
+    "Wire": "*",
+    "ITEADLIB_Arduino_Nextion": "https://github.com/itead/ITEADLIB_Arduino_Nextion.git", 
+    "Adafruit MPU6050": "https://github.com/adafruit/Adafruit_MPU6050.git",      
+    "Adafruit Unified Sensor": "*"                                               
+  },
+  "frameworks": "arduino",
+  "platforms": "atmelsam"
+}
