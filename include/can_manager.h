@@ -13,11 +13,11 @@
 #include <due_can.h>
 #include "header.h" // Include common headers/constants
 
-// Define expected CAN IDs (Update these based on actual configuration)
-#define BAMOCAR_RX_ID   0x201 // Default Bamocar receive ID (we send to this)
-#define BAMOCAR_TX_ID   0x181 // Default Bamocar transmit ID (we receive this)
-#define ORION_BMS_ID_1  0x420 // Example BMS ID 1 (Needs verification)
-#define ORION_BMS_ID_2  0x421 // Example BMS ID 2 (Needs verification)
+// Define expected CAN IDs
+#define BAMOCAR_RX_ID       0x201 // Default Bamocar receive ID (we send to this)
+#define BAMOCAR_TX_ID       0x181 // Default Bamocar transmit ID (we receive this)
+#define ORION_BMS_ID_0x6B0  0x6B0 // BMS Message ID for Pack Current, Voltage, SoC, Relays
+#define ORION_BMS_ID_0x6B1  0x6B1 // BMS Message ID for DCL, CCL, Temperatures
 // Add other necessary CAN IDs here
 
 class CANManager {
@@ -46,7 +46,7 @@ public:
      * @param frame The CAN_FRAME object to send. Must be non-const to match due_can library.
      * @return True if the message was queued for sending, false otherwise.
      */
-    bool send_message(CAN_FRAME &frame); // Changed from const CAN_FRAME&
+    bool send_message(CAN_FRAME &frame);
 
 private:
     /**
@@ -55,13 +55,9 @@ private:
      * @return True if filters were set successfully, false otherwise.
      */
     bool setup_filters();
-
-    // Add pointers or references to handlers if needed, e.g.:
-    // Bamocar* bamocar_handler;
-    // BMSHandler* bms_handler;
 };
 
-// Declare a global instance (or manage instantiation differently if preferred)
+// Declare a global instance
 extern CANManager can_manager;
 
 #endif // CAN_MANAGER_H

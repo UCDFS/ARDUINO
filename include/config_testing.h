@@ -18,6 +18,6 @@
 //
 // WARNING: Ensure this is FALSE for any on-vehicle testing or operation.
 //          Bypassing safety checks can be dangerous.
-const bool BENCH_TEST_MODE = true;
+const bool BENCH_TEST_MODE = false;
 
 #endif // CONFIG_TESTING_H

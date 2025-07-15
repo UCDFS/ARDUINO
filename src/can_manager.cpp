@@ -6,123 +6,114 @@
  */
 
 // TODO:
-// - Verify and add CAN filters in setup_filters() for ALL required BMS message IDs based on your specific Orion BMS configuration.
-// - Confirm Can0.read() behavior in the due_can library regarding reading from multiple filtered mailboxes.
+// - If 'ACCEPT ALL' filter works, revert to specific filters for Bamocar and BMS
+//   once the underlying issue with setRXFilter returning unexpected values is resolved.
+// - Confirm Can0.get_rx_buff() behavior if issues arise.
+// - Investigate why setRXFilter might return values other than 0 or 1.
 
 #include "can_manager.h"
-#include "bms_handler.h"   // Include BMS handler header
-#include "bamocar-due.h" // Include Bamocar header
+#include "bms_handler.h"
+#include "bamocar-due.h" 
+// Ensure Arduino.h is included, typically via header.h or other project files
 
 // Define the global instance
 CANManager can_manager;
 
-// Reference to the global Bamocar instance (assuming it's defined elsewhere, e.g., motor_controller.cpp)
-extern Bamocar bamocar; // Make sure Bamocar object is accessible
+extern Bamocar bamocar; 
 
-//------------------------------------------------------------------------------
-// Constructor
-//------------------------------------------------------------------------------
 CANManager::CANManager() {
     // Constructor
 }
 
-//------------------------------------------------------------------------------
-// Initialize CAN Interface and Filters
-//------------------------------------------------------------------------------
 bool CANManager::initialize(uint32_t baudrate) {
+    if (DEBUG_MODE) Serial.println("CANManager: Attempting Can0.begin()...");
     if (!Can0.begin(baudrate)) {
         if (DEBUG_MODE) {
-            Serial.println("CAN0 Initialization Failed!");
+            Serial.println("CANManager: ERROR - Can0.begin() FAILED!");
         }
         return false;
     }
+    if (DEBUG_MODE) Serial.println("CANManager: Can0.begin() SUCCEEDED.");
 
+    if (DEBUG_MODE) Serial.println("CANManager: Attempting setup_filters() in 'ACCEPT ALL' mode...");
     if (!setup_filters()) {
          if (DEBUG_MODE) {
-            Serial.println("CAN0 Filter Setup Failed!");
+            Serial.println("CANManager: ERROR - setup_filters() FAILED to set 'ACCEPT ALL' filter!");
         }
-        // return false; // Decide if this is critical
+        return false; 
+    } else {
+        if (DEBUG_MODE) Serial.println("CANManager: setup_filters() completed ('ACCEPT ALL' mode).");
     }
 
     if (DEBUG_MODE) {
-        Serial.println("CAN0 Initialized Successfully with Filters.");
+        Serial.println("CANManager: Initialization complete.");
     }
     return true;
 }
 
-//------------------------------------------------------------------------------
-// Configure Hardware Filters
-//------------------------------------------------------------------------------
 bool CANManager::setup_filters() {
-    // Reset all mailboxes/filters to a known state first
-    Can0.reset_all_mailbox(); // Corrected function name
+    if (DEBUG_MODE) Serial.println("CANManager: Entering setup_filters() for 'ACCEPT ALL' mode.");
+    Can0.reset_all_mailbox();
+    if (DEBUG_MODE) Serial.println("CANManager: Mailboxes reset.");
 
-    // The due_can library allows up to 8 filters (0-7) for CAN0.
-    // Each filter can be assigned to one or more mailboxes implicitly by the library
-    // or explicitly if using mailbox-specific filter functions (which are less common in basic usage).
-    // We will set up filters for specific IDs.
-    // For an exact ID match on a standard 11-bit ID, the mask is 0x7FF.
-    const uint32_t EXACT_STD_MASK = 0x7FF;
+    // Configure filter 0 to accept ALL standard CAN IDs
+    // ID = 0, Mask = 0 means all bits are "don't care" for matching
+    uint32_t accept_all_id = 0x000;
+    uint32_t accept_all_mask = 0x000; 
 
-    // Filter 0: Bamocar TX ID (responses from Bamocar)
-    // TODO: Verify BAMOCAR_TX_ID is correct
-    if (!Can0.setRXFilter(0, BAMOCAR_TX_ID, EXACT_STD_MASK, false)) { // filter_num, id, mask, extended
-        if (DEBUG_MODE) Serial.println("Failed to set filter 0 for Bamocar");
-        return false;
+    if (DEBUG_MODE) Serial.println("CANManager: Attempting to set filter 0 to accept all standard IDs (ID=0x000, Mask=0x000)...");
+    uint8_t filter_result = Can0.setRXFilter(0, accept_all_id, accept_all_mask, false); // false for standard ID
+    
+    if (DEBUG_MODE) Serial.print("CANManager: setRXFilter(0) 'ACCEPT ALL' result: ");
+    if (DEBUG_MODE) Serial.println((int)filter_result);
+
+    if (filter_result != 1) { // Assuming 1 is the expected success code from due_can documentation
+        if (DEBUG_MODE) Serial.println("CANManager: ERROR - Failed to set 'ACCEPT ALL' filter on filter 0.");
+        return false; // If we can't even set an accept-all filter, something is more fundamentally wrong.
     }
 
-    // Filter 1: BMS Message ID 1
-    // TODO: Replace ORION_BMS_ID_1 with actual ID
-    if (!Can0.setRXFilter(1, ORION_BMS_ID_1, EXACT_STD_MASK, false)) {
-        if (DEBUG_MODE) Serial.println("Failed to set filter 1 for BMS_ID_1");
-        return false;
-    }
+    if (DEBUG_MODE) Serial.println("CANManager: Filter 0 configured to accept all standard messages.");
+    
+    // Disable other filters explicitly to be sure only filter 0 is active with accept-all.
+    // The due_can library's setRXFilter might implicitly use mailboxes.
+    // reset_all_mailbox() should have disabled them, but this is an extra precaution.
+    // Note: The due_can library does not have a simple `disable_filter(i)` function.
+    // Filters are tied to mailboxes. `reset_all_mailbox()` is the primary way to clear them.
+    // If filter 0 is set to accept all, other specific filters are not strictly necessary
+    // for receiving all messages, but they wouldn't harm if set to reject or specific IDs.
+    // For this test, we rely on filter 0 being the only one effectively open to all.
 
-    // Filter 2: BMS Message ID 2
-    // TODO: Replace ORION_BMS_ID_2 with actual ID
-    if (!Can0.setRXFilter(2, ORION_BMS_ID_2, EXACT_STD_MASK, false)) {
-        if (DEBUG_MODE) Serial.println("Failed to set filter 2 for BMS_ID_2");
-        return false;
-    }
-
-    // --- IMPORTANT ---
-    // TODO: Add filters here for ALL BMS message IDs you expect to receive.
-    // Use subsequent filter numbers (3, 4, ..., up to 7).
-    // Example:
-    // if (!Can0.setRXFilter(3, YOUR_NEXT_BMS_ID, EXACT_STD_MASK, false)) {
-    //     if (DEBUG_MODE) Serial.println("Failed to set filter 3 for YOUR_NEXT_BMS_ID");
-    //     return false;
-    // }
-    // --- --- --- --- ---
-
-    return true;
+    return true; 
 }
 
-
-//------------------------------------------------------------------------------
-// Process Incoming Messages
-//------------------------------------------------------------------------------
 void CANManager::process_incoming_messages() {
     CAN_FRAME incoming_frame;
+    if (Can0.rx_avail() > 0) {
+       if(Can0.get_rx_buff(incoming_frame)) {
+            if (DEBUG_MODE >= 2) { // More verbose debugging for received messages
+                Serial.print("CANManager: RX ID: 0x"); Serial.print(incoming_frame.id, HEX);
+                Serial.print(" DLC: "); Serial.print(incoming_frame.length);
+                Serial.print(" Data: ");
+                for (int i = 0; i < incoming_frame.length; i++) {
+                    Serial.print(incoming_frame.data.bytes[i], HEX); Serial.print(" ");
+                }
+                Serial.println();
+            }
 
-    if (Can0.rx_avail() > 0) { // Use rx_avail() to check for messages
-       if(Can0.get_rx_buff(incoming_frame)) { // Use get_rx_buff() to read
-
-            // Dispatch based on CAN ID
             switch (incoming_frame.id) {
-                case BAMOCAR_TX_ID:
-                    bamocar.handle_incoming_frame(incoming_frame);
+                case BAMOCAR_TX_ID: // Still check for Bamocar ID if it's on the bus
+                    // For BMS-only test, you might comment this out if Bamocar isn't connected.
+                    // bamocar.handle_incoming_frame(incoming_frame); 
+                    if (DEBUG_MODE) Serial.println("CANManager: Bamocar message (0x181) received and processed (or would be).");
                     break;
-
-                // TODO: Add cases for ALL expected BMS IDs here
-                case ORION_BMS_ID_1:
-                case ORION_BMS_ID_2:
+                case ORION_BMS_ID_0x6B0:
+                case ORION_BMS_ID_0x6B1:
                     bms_handler.handle_incoming_frame(incoming_frame);
                     break;
-
                 default:
+                    // With accept-all, you might see other IDs if any other devices are on the bus
                     if (DEBUG_MODE) {
-                        Serial.print("CANManager: Received unexpected ID (passed filters): 0x");
+                        Serial.print("CANManager: Received other ID (not BMS/Bamocar): 0x");
                         Serial.println(incoming_frame.id, HEX);
                     }
                     break;
@@ -135,10 +126,6 @@ void CANManager::process_incoming_messages() {
     }
 }
 
-//------------------------------------------------------------------------------
-// Send CAN Message
-//------------------------------------------------------------------------------
-// Changed parameter to non-const to match due_can library's sendFrame
-bool CANManager::send_message(CAN_FRAME& frame) { // Made frame non-const
+bool CANManager::send_message(CAN_FRAME& frame) {
     return Can0.sendFrame(frame);
 }
