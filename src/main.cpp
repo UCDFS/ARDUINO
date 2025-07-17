@@ -1,129 +1,154 @@
-/**
- * @file main.cpp
- * @brief Main application file for the UCD Formula Student EV Controller.
- * Initializes hardware and runs the main control loop.
- * Modified to use CANManager and new control structure.
- * @author Shane Whelan (UCD Formula Student)
- * @date 2025-04-27
- */
-
-#include "bamocar-due.h"
-#include "bms_handler.h"
-#include "can_manager.h"
 #include "header.h"
 
-// Global variables defined elsewhere (e.g., globals.h, brake_light.cpp)
-extern int brakePressure; // Assuming brake_light.cpp defines and updates this
+// MPU6050 variables
+Adafruit_MPU6050 mpu;
+bool mpuInitialized = false;
 
-// Define MPU object if used globally (e.g., for brake light tilt)
-Adafruit_MPU6050 mpu; // Define it here
+// Motor controller test mode
+// TODO: SET TO FALSE FOR VEHICLE OPERATION
+bool BAMOCAR_TEST_MODE = true;
 
-//------------------------------------------------------------------------------
-// SETUP FUNCTION
-//------------------------------------------------------------------------------
+// Global variables
+int brakePressure = 0;
+int vehicleSpeed = 0;
+int motorRPM = 0;
+float batteryVoltage = 0;
+int motorTemperature = 0;
+
 void setup() {
-  // --- Initialize Serial Communication ---
-  Serial.begin(115200); // Use a faster baud rate if possible
-  while (!Serial && millis() < 5000)
-    ; // Wait for serial port to connect (max 5s)
-  if (DEBUG_MODE) {
-    Serial.println("--- UCD FS EV Controller Booting ---");
-  }
-
-  // --- Initialize Pins ---
+  Serial.begin(115200);
+  while (!Serial && millis() < 2000);  // Wait max 2 seconds
+  Serial.println("\n--- UCD FS EV Controller Starting ---");
+  
+  // Initialize pins
   pinMode(BRAKE_LIGHT_PIN, OUTPUT);
-  digitalWrite(BRAKE_LIGHT_PIN, LOW); // Ensure brake light is off initially
-
-  // Initialize APPS pins (analog inputs, no pinMode needed)
-  // Initialize Brake Pressure Sensor pin (analog input, no pinMode needed)
-
+  digitalWrite(BRAKE_LIGHT_PIN, LOW);
+  
+  // Initialize CAN
+  can.setDebugLevel(0);  // Maximum debug output initially
+  if (!can.begin(500000)) {
+    Serial.println("FATAL: CAN initialization failed!");
+  } else {
+    Serial.println("CAN initialized successfully");
+  }
+  
   // Initialize error monitoring pins
-  monitor_errors_setup(); // Sets pins 22-37 as INPUT
+  monitor_errors_setup();
 
-  // --- Initialize CAN Communication ---
-  // CANManager handles CAN0.begin() and filter setup
-  if (!can_manager.initialize(CAN_BPS_500K)) {
-    Serial.println("FATAL: CAN Initialization failed! Halting.");
-    while (1)
-      ; // Halt execution
+  if (BAMOCAR_TEST_MODE) {
+    Serial.println("BAMOCAR TEST: Requesting controller data...");
+    can.requestBamocarData(0x40, 0x64); // STATUS every 100ms
+    can.requestBamocarData(0x30, 0x64); // RPM every 100ms  
+    can.requestBamocarData(0x90, 0x64); // TORQUE every 100ms
+    can.requestBamocarData(0xE2, 0x64); // READY state every 100ms
+    can.requestBamocarData(0x49, 0xC8); // MOTOR TEMP every 200ms
+    
+    // Enable controller for testing
+    Serial.println("BAMOCAR TEST: Enabling controller...");
+    can.sendBamocarCmd(0x51, 0x01);
+    Serial.println("BAMOCAR TEST: Move pedal to send commands");
+    Serial.println("-----------------------------------------");
+  } else
+  
+  // Initialize MPU6050
+  mpuInitialized = initializeMPU();
+  if (!mpuInitialized) {
+    Serial.println("WARNING: MPU6050 initialization failed - brake light deceleration detection disabled");
   }
-
-  // --- Initialize Sensors ---
-  // Initialize MPU6050 (if used, e.g., in brake_light.cpp)
-  // It's better to initialize here than in the loop function.
-  // Assuming brake_light.cpp has initializeMPU() made accessible or defined
-  // here
-  initializeMPU(); // Call the MPU init function
-
-  // --- Initialize Dashboard (Optional) ---
-  // dash_setup(); // Uncomment if using Nextion display
-
-  // --- Initial Requests for Device Status (Optional) ---
-  // Request initial status from Bamocar and BMS if needed at startup
-  // Note: Periodic requests are handled in motor_control_update()
-  bamocar.requestStatus(INTVL_IMMEDIATE);
-  // Add BMS initial requests if applicable/needed
-
-  if (DEBUG_MODE) {
-    Serial.println("--- Setup Complete ---");
-  }
+  
+  // Request initial data from motor controller
+  Serial.println("Requesting initial motor data...");
+  can.requestBamocarData(0x30, 0x64);  // RPM
+  can.requestBamocarData(0x90, 0x64);  // Torque
+  can.requestBamocarData(0x49, 0xC8);  // Motor temp
+  can.requestBamocarData(0x40, 0x64);  // Status
+  
+  Serial.println("--- Setup Complete ---");
 }
 
-//------------------------------------------------------------------------------
-// MAIN LOOP
-//------------------------------------------------------------------------------
 void loop() {
-  // --- 1. Process Incoming CAN Messages ---
-  // Reads messages from CAN buffer and dispatches to handlers (BMS, Bamocar)
-  can_manager.process_incoming_messages();
-
-  // --- 2. Read Sensors & Update Local States ---
-  // Reads brake pressure ADC, MPU6050 (if used), updates brake light state
-  brake_light(); // Updates global 'brakePressure' variable
-
-  // Monitor error input pins
-  monitor_errors_loop(); // Updates global errorXX flags
-
-  // --- 3. Execute Core Control Logic ---
-  // Reads APPS, performs safety checks (APPS plausibility, APPS/Brake, BMS
-  // status), determines final torque command, and sends it via CANManager. Also
-  // handles periodic CAN requests (status, temp) to Bamocar.
-  motor_control_update();
-
-  // --- 4. Update Dashboard (Optional) ---
-  // dash_loop(); // Uncomment if using Nextion display
-
-  // --- 5. Debug Output ---
-  if (DEBUG_MODE >= 3) { // Example: Higher debug level for less frequent output
-    static unsigned long last_debug_print = 0;
-    if (millis() - last_debug_print > 1000) { // Print status every second
-      Serial.println("--- Loop Status ---");
-      // Print key variables like APPS %, Brake Pressure, BMS SoC, Bamocar
-      // Status etc.
-      const BMSData &bms_data = bms_handler.get_bms_data();
-      Serial.print("  BMS SoC: ");
-      Serial.print(bms_data.pack_soc);
-      Serial.println("%");
-      Serial.print("  BMS Voltage: ");
-      Serial.print(bms_data.pack_voltage);
-      Serial.println(" V");
-      Serial.print("  BMS Fault: ");
-      Serial.println(bms_handler.has_critical_fault() ? "YES" : "NO");
-      Serial.print("  Brake Pressure (Raw): ");
-      Serial.println(brakePressure);
-      Serial.print("  Bamocar Status: 0x");
-      Serial.println(bamocar.getStatus(), HEX);
-      // Add more debug info...
-      last_debug_print = millis();
-      Serial.println("------------------");
+  // Process CAN messages
+  can.update();
+  
+  // Handle brake light logic
+  brake_light();
+  
+  // Read pedal position
+  double pedal_position = get_apps_reading();
+  
+  // Update global variables from CAN
+  motorRPM = can.getMotorRPM();
+  batteryVoltage = can.getPackVoltage();
+  motorTemperature = can.getMotorTemp();
+  
+  // Basic motor control
+  bool brake_active = (brakePressureCombined > dynamicBrakeThreshold);
+  if (pedal_position >= 0 && !brake_active && !can.getSystemError()) {
+    // Only allow torque when pedal is valid and brake is not active
+    uint16_t torqueCmd = (pedal_position / 100.0) * 32767;
+    can.sendBamocarCmd(0x90, torqueCmd);
+  } else {
+    // Safety condition: set zero torque
+    can.sendBamocarCmd(0x90, 0);
+  }
+  
+  // Monitor errors
+  monitor_errors_loop();
+  
+  // Debug output
+  static unsigned long last_debug = 0;
+  if (millis() - last_debug > 0) {
+    Serial.print("[STATUS] BMS: ");
+    Serial.print(can.getPackVoltage(), 1);
+    Serial.print("V, ");
+    Serial.print(can.getPackSOC());
+    Serial.print("%, Fault:");
+    Serial.print(can.getSystemError() ? "YES" : "NO");
+    Serial.print(" | Rear Brake:");
+    Serial.print(brakePressureRear);
+    Serial.print(" | Front Brake:");
+    Serial.print(brakePressureFront);
+    Serial.print(" | Bamocar:0x");
+    Serial.print(can.getSystemError() ? "ERROR" : "OK");  // Replace with actual status when available
+    Serial.print(" | Brake Light: ");
+    Serial.print(digitalRead(BRAKE_LIGHT_PIN) ? "ON" : "OFF");
+    Serial.print(" | APPS: ");
+    Serial.print(pedal_position);
+    Serial.print(" |  Torque Request: ");
+    int torqueInt = (int)((pedal_position / 100.0) * 32767);
+    Serial.print(torqueInt);
+    Serial.print("  | Combined Brakes: ");
+    Serial.print(brakePressureCombined);
+    Serial.print("  | Brake Light: ");
+    Serial.print(digitalRead(BRAKE_LIGHT_PIN) ? "ON" : "OFF");
+    Serial.print("  | MPU Angle: ");
+    if (mpuInitialized) {
+      sensors_event_t a, g, temp;
+      mpu.getEvent(&a, &g, &temp);
+      Serial.print(a.acceleration.x, 1);
+      Serial.print(", ");
+      Serial.print(a.acceleration.y, 1);
+      Serial.print(", ");
+      Serial.print(a.acceleration.z, 1);
+    } else {
+      Serial.println("MPU not initialized");
+    }
+    
+      Serial.println();
+      Serial.println();
+      Serial.println("\n----- BAMOCAR TEST STATUS -----");
+      Serial.print("Motor RPM: ");
+      Serial.print(can.getMotorRPM());
+      Serial.print(" | Torque: ");
+      Serial.print(can.getMotorTorque());
+      Serial.print("Nm | Temp: ");
+      Serial.print(can.getMotorTemp());
+      Serial.println("°C");
+      Serial.print("Controller Status: 0x");
+      Serial.print(can.getSystemError() ? "ERROR" : "OK");
+      Serial.print(" | Ready State: ");
+      Serial.println(can.getSystemError() ? "NOT READY" : "READY");
+      Serial.println("-----------------------------\n");
+      last_debug = millis();
     }
   }
-
-  // --- Loop Timing ---
-  // Removed the blocking delay(800). The loop should run as fast as possible
-  // to ensure timely processing of CAN messages and control updates.
-  // If specific timing is needed for certain tasks, use non-blocking millis()
-  // checks. delayMicroseconds(100); // Optional: small delay to yield processor
-  // if needed, but generally avoid blocking delays.
-
-} // End of loop()
