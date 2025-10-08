@@ -12,30 +12,33 @@ mechanicaly impossible, or otherwise broken
 
 */
 
-class APPS {
-public:
-  APPS();
-  APPS(APPS &&) = default;
-  APPS(const APPS &) = default;
-  APPS &operator=(APPS &&) = default;
-  APPS &operator=(const APPS &) = default;
-  ~APPS();
-  double
-  get_apps_reading(); // Returns pedal position (%) or -1.0 on implausibility
+#include <Arduino.h>
+#include <SPI.h>
+#include <Wire.h>
 
-private:
-  constexpr double PEDAL_MIN;
-  constexpr double PEDAL_MAX;
-  const int APPS_1_PIN = A6;
-  const int APPS_2_PIN = A7;
-  const int APPS_BRAKE_PLAUSIBILITY_THRESHOLD =
-      25; // % APPS request threshold for brake plausibility check (Rule EV.5.7)
+// ------------ EXTERNAL LIBRARIES ------------
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <Nextion.h>
+#include <due_can.h>
 
-  // APPS
-  const float APPS_PLAUSIBILITY_THRESHOLD =
-      10.0f; // % difference threshold (Rule EV.5.6)
-};
+namespace APPS {
 
-APPS::APPS() {}
+double
+get_apps_reading(); // Returns pedal position (%) or -1.0 on implausibility
 
-APPS::~APPS() {}
+extern const double PEDAL_MIN;
+extern const double PEDAL_MAX;
+constexpr int APPS_1_PIN = A6;
+constexpr int APPS_2_PIN = A7;
+
+// Define pedal calibration constants - UPDATED based on actual measurements
+// These are RAW ADC values (not voltages), since values DECREASE when pressed
+constexpr int APPS1_RAW_MIN = 477; // Value when pedal is fully pressed (100%)
+constexpr int APPS1_RAW_MAX = 702; // Value when pedal is released (0%)
+constexpr int APPS2_RAW_MIN = 478; // Value when pedal is fully pressed (100%)
+constexpr int APPS2_RAW_MAX = 701; // Value when pedal is released (0%)
+
+// APPS
+constexpr float APPS_PLAUSIBILITY_THRESHOLD = 10.0f; // T11.8.9
+} // namespace APPS
