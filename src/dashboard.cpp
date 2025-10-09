@@ -23,8 +23,8 @@ bool systemAlert = false;
 bool systemWarning = false;
 char alertMessageStr[50] = "";
 char warningMessageStr[50] = "";
-int motorTempWarningThreshold = 80;
-float batteryVoltageMinThreshold = 20.0;
+int motorTempWarningThreshold = 80;         //add to header?
+float batteryVoltageMinThreshold = 20.0;    //add to header?
 int systemErrorCode = 0;
 
 // Define Nextion objects for page 2
