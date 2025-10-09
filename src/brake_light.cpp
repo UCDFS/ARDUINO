@@ -18,9 +18,9 @@ int brakeIdleValueRear = 0;
 int brakeIdleValueCombined = 0;
 int dynamicBrakeThreshold = 0;
 bool brakeInitialized = false;
-const int BRAKE_THRESHOLD_DELTA = 10; // Threshold above idle value
+const int BRAKE_THRESHOLD_DELTA = 10; // Threshold above idle value //add to bpps.h?
 
-extern Adafruit_MPU6050 mpu;
+extern Adafruit_MPU6050 mpu; 
 extern bool mpuInitialized;
 
 bool initializeMPU() {

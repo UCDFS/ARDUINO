@@ -11,6 +11,7 @@
 
 // Define pedal calibration constants - UPDATED based on actual measurements
 // These are RAW ADC values (not voltages), since values DECREASE when pressed
+//add to apps.h?
 const int APPS1_RAW_MIN = 477;  // Value when pedal is fully pressed (100%)
 const int APPS1_RAW_MAX = 702;  // Value when pedal is released (0%)
 const int APPS2_RAW_MIN = 478;  // Value when pedal is fully pressed (100%)
